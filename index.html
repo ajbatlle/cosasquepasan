@@ -634,7 +634,7 @@ html.ver-grilla .guias {
       opcion('WhatsApp', () => whatsapp(e)),
       opcion('Instagram', (b) => accion(b, e, 'compartir')),
       opcion('Descargar PNG', (b) => accion(b, e, 'bajar')));
-    if (navigator.share) opciones.append(opcion('Más…', () => navigator.share({ title: e.titulo, url: enlaceDe(e) }).catch(() => {})));
+    if (tactil() && navigator.share) opciones.append(opcion('Más…', () => navigator.share({ title: e.titulo, url: enlaceDe(e) }).catch(() => {})));
     function alternarOpciones(abrir) {
       const abre = abrir === undefined ? opciones.hidden : abrir;
       opciones.hidden = !abre;
@@ -767,6 +767,10 @@ html.ver-grilla .guias {
     clearTimeout(temporizadorAviso); temporizadorAviso = setTimeout(() => n.classList.remove('visible'), 3400);
   }
 
+  /* La hoja de compartir del sistema solo se usa en pantallas táctiles: en Windows y Mac abre un diálogo
+     del sistema que no lleva a ninguna parte útil, y ahí es mejor bajar la imagen. */
+  const tactil = () => matchMedia('(pointer: coarse)').matches;
+
   /* El enlace de un poema lleva su ruta en el hash: al abrirlo cae directo en él. */
   const enlaceDe = (e) => `${location.origin}${location.pathname}#/${e.id}`;
 
@@ -793,7 +797,7 @@ html.ver-grilla .guias {
       const blobs = await crearImagenes(e);
       if (que === 'compartir') {
         const archivos = blobs.map((b, i) => new File([b], nombreArchivo(e, i, blobs.length), { type: 'image/png' }));
-        if (navigator.canShare && navigator.canShare({ files: archivos })) {
+        if (tactil() && navigator.canShare && navigator.canShare({ files: archivos })) {
           try { await navigator.share({ files: archivos, title: e.titulo }); }
           catch (err) { if (err.name !== 'AbortError') { descargar(blobs, e); avisar('Imagen descargada'); } }
         } else { descargar(blobs, e); avisar(blobs.length > 1 ? 'Imágenes descargadas para Instagram' : 'Imagen descargada para Instagram'); }
