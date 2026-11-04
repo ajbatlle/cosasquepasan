@@ -350,8 +350,8 @@ html.ver-grilla .guias {
      El texto es de Antonio: una entrada sin tercetos se muestra como hueco, sin inventar nada.
      PROVISORIO: los dos tercetos de «martes de verano» son los que no tienen correcciones en la
      hoja impresa; sirven para probar la lectura y se reemplazan por el texto final. */
-  const entradas = [
-    { id: 'martes-de-verano', titulo: 'martes de verano', tercetos: [
+  const todas = [
+    { id: 'martes-de-verano', titulo: 'martes de verano', provisorio: true, tercetos: [
       'la fila da la vuelta\nal registro civil y desde arriba\nparece una serpiente',
       'el guardia da los números\nescritos con plumón anoto el mío\npor si llego a perderlo',
     ] },
@@ -526,6 +526,10 @@ html.ver-grilla .guias {
       'Aunque tengo dos facetas\nyo te muestro solo una.\nCada mes prendo y apago,\nsoy la misteriosa luna.',
     ] },
   ];
+
+  /* El índice solo muestra lo que ya tiene texto final: las entradas vacías o provisorias quedan
+     guardadas arriba, sin publicarse, hasta que haya texto. */
+  const entradas = todas.filter((e) => e.tercetos.length > 0 && !e.provisorio);
 
   /* Las fotos de la portada, una por elemento, en este orden: rombos, cruz, círculos, flor.
      Cada una es { src: 'fotos/archivo.jpg', alt: 'qué se ve' }. Con `null` el elemento queda azul. */
@@ -715,7 +719,9 @@ html.ver-grilla .guias {
       /* Red de seguridad: si el navegador demora la transición, la vista se dibuja igual a los 0,4 s. */
       let hecho = false;
       const una = () => { if (hecho) return; hecho = true; dibujar(); };
-      document.startViewTransition(una);
+      const vt = document.startViewTransition(una);
+      /* Si la transición se aborta (otra ruta llegó antes), no es un error: se ignora. */
+      vt.ready.catch(() => {}); vt.finished.catch(() => {}); vt.updateCallbackDone.catch(() => {});
       setTimeout(una, 400);
     } else dibujar();
   }
