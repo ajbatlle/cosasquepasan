@@ -229,6 +229,11 @@ main { flex: 1; padding-top: calc(4 * var(--u)); }
 .acciones .pildora { font-size: var(--t-1); }
 .acciones .pildora[disabled] { opacity: 0.4; }
 
+/* Opciones de compartir: se revelan en el lugar, debajo del botón, sin tapar nada. */
+.opciones { grid-column: 5 / span 6; display: flex; flex-wrap: wrap; gap: var(--u) calc(2 * var(--u)); margin-top: var(--u); }
+.opciones[hidden] { display: none; }
+.opcion[disabled] { opacity: 0.4; }
+
 /* Aviso efímero: uno cada vez y breve. */
 .aviso {
   position: fixed; left: 50%; bottom: calc(2 * var(--u)); translate: -50% 0; z-index: 30;
@@ -297,8 +302,9 @@ html.ver-grilla .guias {
   .indice { grid-column: 1 / -1; }
   .indice a { padding-block: calc(var(--u) / 2); min-height: 44px; }
   .entrada .cabeza { grid-column: 1 / -1; position: static; margin-bottom: calc(2 * var(--u)); }
-  .cuerpo, .acciones, .pie-entrada { grid-column: 1 / -1; }
+  .cuerpo, .acciones, .opciones, .pie-entrada { grid-column: 1 / -1; }
   .acciones .pildora { min-height: 44px; }
+  .opcion { min-height: 44px; display: inline-flex; align-items: center; }
   main { padding-top: calc(3 * var(--u)); }
 }
 
@@ -618,10 +624,24 @@ html.ver-grilla .guias {
     const cuerpo = el('article', { className: 'cuerpo', ariaLabel: e.titulo });
     e.tercetos.forEach((t) => cuerpo.append(el('p', { className: 'terceto', textContent: t })));
 
-    const bajar = el('button', { className: 'pildora', type: 'button', textContent: 'Descargar PNG', onclick: () => accion(bajar, e, 'bajar') });
-    const compartir = el('button', { className: 'pildora', type: 'button', textContent: 'Compartir en Instagram', onclick: () => accion(compartir, e, 'compartir') });
-    bajar.dataset.iman = ''; compartir.dataset.iman = '';
-    const acciones = el('div', { className: 'acciones' }, bajar, compartir);
+    /* Compartir, como en Spotify: un botón que abre las opciones. */
+    const compartir = el('button', { className: 'pildora', type: 'button', textContent: 'Compartir', onclick: () => alternarOpciones() });
+    compartir.setAttribute('aria-expanded', 'false');
+    compartir.dataset.iman = '';
+    const opcion = (texto, fn) => { const b = el('button', { className: 'opcion enlace', type: 'button', textContent: texto }); b.onclick = () => fn(b); return b; };
+    const opciones = el('div', { className: 'opciones', hidden: true, role: 'group', ariaLabel: 'Compartir este poema' },
+      opcion('Copiar enlace', () => copiarEnlace(e)),
+      opcion('WhatsApp', () => whatsapp(e)),
+      opcion('Instagram', (b) => accion(b, e, 'compartir')),
+      opcion('Descargar PNG', (b) => accion(b, e, 'bajar')));
+    if (navigator.share) opciones.append(opcion('Más…', () => navigator.share({ title: e.titulo, url: enlaceDe(e) }).catch(() => {})));
+    function alternarOpciones(abrir) {
+      const abre = abrir === undefined ? opciones.hidden : abrir;
+      opciones.hidden = !abre;
+      compartir.setAttribute('aria-expanded', String(abre));
+      if (abre) opciones.querySelector('button').focus();
+    }
+    const acciones = el('div', { className: 'acciones' }, compartir);
 
     const ant = entradas[idx - 1], sig = entradas[idx + 1];
     const pie = el('nav', { className: 'pie-entrada menor', ariaLabel: 'Entradas' },
@@ -629,7 +649,7 @@ html.ver-grilla .guias {
       enlaceEntrada(ant, 'Anterior'),
       enlaceEntrada(sig, 'Siguiente'));
 
-    contenido.replaceChildren(el('section', { className: 'vista entrada malla' }, cabeza, cuerpo, acciones, pie));
+    contenido.replaceChildren(el('section', { className: 'vista entrada malla' }, cabeza, cuerpo, acciones, opciones, pie));
   }
 
   /* Los cuatro elementos de la marca, a escala u: la firma de la entrada. */
@@ -747,6 +767,24 @@ html.ver-grilla .guias {
     clearTimeout(temporizadorAviso); temporizadorAviso = setTimeout(() => n.classList.remove('visible'), 3400);
   }
 
+  /* El enlace de un poema lleva su ruta en el hash: al abrirlo cae directo en él. */
+  const enlaceDe = (e) => `${location.origin}${location.pathname}#/${e.id}`;
+
+  async function copiarEnlace(e) {
+    const url = enlaceDe(e);
+    try { await navigator.clipboard.writeText(url); }
+    catch (_) {
+      /* Sin permiso del portapapeles (por ejemplo, en una página sin https): se copia con un campo temporal. */
+      const t = el('textarea', { value: url }); t.style.cssText = 'position:fixed;opacity:0'; document.body.append(t); t.select();
+      try { document.execCommand('copy'); } catch (__) {} t.remove();
+    }
+    avisar('Enlace copiado');
+  }
+
+  function whatsapp(e) {
+    window.open(`https://wa.me/?text=${encodeURIComponent(`${e.titulo} ${enlaceDe(e)}`)}`, '_blank', 'noopener');
+  }
+
   /* Compartir: en el celular abre la hoja de compartir del sistema, donde está Instagram. Instagram no
      deja publicar desde una página web, así que en el computador se baja la imagen para subirla desde ahí. */
   async function accion(boton, e, que) {
@@ -789,7 +827,11 @@ html.ver-grilla .guias {
     const k = ev.key;
     if (k === 'g') { root.classList.toggle('ver-grilla'); return; }
     if (!abierta) return;
-    if (k === 'Escape') { location.hash = '#/'; }
+    if (k === 'Escape') {
+      const abiertas = $('.opciones:not([hidden])');
+      if (abiertas) { abiertas.hidden = true; const b = $('.acciones .pildora'); if (b) { b.setAttribute('aria-expanded', 'false'); b.focus(); } }
+      else location.hash = '#/';
+    }
     else if (k === ']' || k === '[') {
       const i = entradas.indexOf(abierta) + (k === ']' ? 1 : -1);
       if (entradas[i]) location.hash = `#/${entradas[i].id}`;
