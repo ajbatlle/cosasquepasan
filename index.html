@@ -217,30 +217,26 @@ main { flex: 1; padding-top: calc(4 * var(--u)); }
 .entrada h2 { font-size: var(--t1); line-height: var(--u); font-weight: 600; letter-spacing: -0.01em; margin-bottom: var(--u); }
 .entrada .corrido { font-size: var(--t-1); color: var(--gris); }
 
-/* Marcas: un cuarto de vuelta por terceto, alternando el sentido. Solo `transform`. */
+/* Marcas: los cuatro elementos de la marca, a escala u, como firma de cada entrada. */
 .marcas { display: flex; gap: calc(0.75 * var(--u)); margin-top: calc(3 * var(--u)); color: var(--azul); }
-.marcas svg { width: var(--u); height: var(--u); display: block; overflow: visible; transform: rotate(calc(var(--giro, 0) * 90deg)); transition: transform var(--lento); }
-.marcas svg:nth-child(even) { transform: rotate(calc(var(--giro, 0) * -90deg)); }
+.marcas svg { width: var(--u); height: var(--u); display: block; overflow: visible; }
 
 .cuerpo { grid-column: 5 / span 6; }
+.terceto { white-space: pre-line; margin-bottom: calc(2 * var(--u)); }
 
-.terceto {
-  white-space: pre-line;
-  margin-bottom: calc(2 * var(--u));
-  transition: color var(--normal);
+/* Acciones del poema: bajarlo como imagen o compartirlo. */
+.acciones { grid-column: 5 / span 6; display: flex; flex-wrap: wrap; gap: var(--u); margin-top: var(--u); }
+.acciones .pildora { font-size: var(--t-1); }
+.acciones .pildora[disabled] { opacity: 0.4; }
+
+/* Aviso efímero: uno cada vez y breve. */
+.aviso {
+  position: fixed; left: 50%; bottom: calc(2 * var(--u)); translate: -50% 0; z-index: 30;
+  padding: 0.6em 1.4em; border: 1px solid var(--azul); border-radius: 9999px;
+  background: var(--blanco); color: var(--azul); font-size: var(--t-1); line-height: 1.2;
+  opacity: 0; pointer-events: none; transition: opacity var(--normal);
 }
-/* En la libreta, lo que ya se escribió queda en gris y lo último, en negro. */
-.paso-a-paso .terceto.leido  { color: var(--gris); }
-/* Lo que aún no se lee no ocupa lugar: la libreta crece hacia abajo y el botón «Seguir» queda
-   siempre pegado al último terceto, a la vista. Con muchos tercetos, reservar todo el hueco
-   dejaba el botón a varias pantallas de distancia. El que llega entra con un fundido corto. */
-.paso-a-paso .terceto.oculto { display: none; }
-.terceto.nuevo { animation: entra var(--normal) both; }
-@keyframes entra { from { opacity: 0; transform: translateY(calc(var(--u) / 2)); } }
-
-.seguir-fila { grid-column: 5 / span 6; min-height: calc(2 * var(--u)); }
-.seguir[hidden] { display: inline-flex; visibility: hidden; }
-.cabecera .dato .pildora { font-size: var(--t-1); }
+.aviso.visible { opacity: 1; }
 
 .pie-entrada { grid-column: 5 / span 6; display: flex; align-items: baseline; gap: calc(2 * var(--u)); margin-top: calc(3 * var(--u)); }
 /* Índice a la izquierda, sobre el borde del texto; Anterior y Siguiente juntos a la derecha. */
@@ -301,8 +297,8 @@ html.ver-grilla .guias {
   .indice { grid-column: 1 / -1; }
   .indice a { padding-block: calc(var(--u) / 2); min-height: 44px; }
   .entrada .cabeza { grid-column: 1 / -1; position: static; margin-bottom: calc(2 * var(--u)); }
-  .cuerpo, .seguir-fila, .pie-entrada { grid-column: 1 / -1; }
-  .seguir { min-height: 44px; display: inline-flex; align-items: center; }
+  .cuerpo, .acciones, .pie-entrada { grid-column: 1 / -1; }
+  .acciones .pildora { min-height: 44px; }
   main { padding-top: calc(3 * var(--u)); }
 }
 
@@ -339,7 +335,7 @@ html.ver-grilla .guias {
     <p class="menor hora"><span data-reloj-hora></span> santiago de chile</p>
   </footer>
 
-  <p class="solo-lector" aria-live="polite" id="anuncio"></p>
+  <p class="aviso" id="aviso" role="status" aria-live="polite"></p>
 </div>
 
 <script>
@@ -545,7 +541,6 @@ html.ver-grilla .guias {
   const $ = (s, r = document) => r.querySelector(s);
   const contenido = $('#contenido');
   const dato = $('#dato');
-  const anuncio = $('#anuncio');
   const root = document.documentElement;
   const reducido = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -553,12 +548,8 @@ html.ver-grilla .guias {
   const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
   const leer = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
 
-  /* El modo corrido es una preferencia del lector: se recuerda. */
-  let corrido = leer('cqp-corrido') === '1';
-
-  /* Estado de la entrada abierta: cuántos tercetos se ven. */
+  /* Entrada abierta en este momento. */
   let abierta = null;
-  let visibles = 0;
 
   const el = (tag, props = {}, ...hijos) => {
     const n = Object.assign(document.createElement(tag), props);
@@ -615,28 +606,22 @@ html.ver-grilla .guias {
     if (idx < 0) { location.replace('#/'); return; }
     const e = entradas[idx];
     abierta = e;
-    visibles = corrido ? e.tercetos.length : Math.min(1, e.tercetos.length);
     document.title = `${e.titulo} · cosas que pasan`;
-    dato.replaceChildren(el('button', { className: 'pildora', type: 'button', textContent: corrido ? 'Leer de a poco' : 'Leer de corrido', onclick: alternarCorrido }));
-    $('.pildora', dato).dataset.iman = '';
-
-    const paso = e.tercetos.length > 0 && !corrido;
+    dato.replaceChildren();
 
     const cabeza = el('div', { className: 'cabeza' },
       el('h2', { textContent: e.titulo }),
       el('p', { className: 'corrido menor', textContent: `${idx + 1} de ${entradas.length}` }),
       marcas());
 
-    const cuerpo = el('article', { className: 'cuerpo' + (paso ? ' paso-a-paso' : ''), ariaLabel: e.titulo });
-    e.tercetos.forEach((t, i) => {
-      const p = el('p', { className: 'terceto', textContent: t });
-      cuerpo.append(p);
-    });
+    /* El poema entero, de una vez. */
+    const cuerpo = el('article', { className: 'cuerpo', ariaLabel: e.titulo });
+    e.tercetos.forEach((t) => cuerpo.append(el('p', { className: 'terceto', textContent: t })));
 
-    const seguir = el('button', { className: 'seguir pildora', type: 'button', textContent: 'Seguir', onclick: avanzar });
-    seguir.dataset.iman = '';
-    seguir.hidden = !paso || visibles >= e.tercetos.length;
-    const fila = el('div', { className: 'seguir-fila' }, seguir);
+    const bajar = el('button', { className: 'pildora', type: 'button', textContent: 'Descargar PNG', onclick: () => accion(bajar, e, 'bajar') });
+    const compartir = el('button', { className: 'pildora', type: 'button', textContent: 'Compartir en Instagram', onclick: () => accion(compartir, e, 'compartir') });
+    bajar.dataset.iman = ''; compartir.dataset.iman = '';
+    const acciones = el('div', { className: 'acciones' }, bajar, compartir);
 
     const ant = entradas[idx - 1], sig = entradas[idx + 1];
     const pie = el('nav', { className: 'pie-entrada menor', ariaLabel: 'Entradas' },
@@ -644,13 +629,10 @@ html.ver-grilla .guias {
       enlaceEntrada(ant, 'Anterior'),
       enlaceEntrada(sig, 'Siguiente'));
 
-    const vista = el('section', { className: 'vista entrada malla' }, cabeza, cuerpo, fila, pie);
-    contenido.replaceChildren(vista);
-    pintar();
+    contenido.replaceChildren(el('section', { className: 'vista entrada malla' }, cabeza, cuerpo, acciones, pie));
   }
 
-  /* Los cuatro elementos de la marca, a escala u. Giran un cuarto de vuelta por cada terceto:
-     el movimiento lo da la lectura, no un temporizador, y dice dónde va el lector sin escribirlo. */
+  /* Los cuatro elementos de la marca, a escala u: la firma de la entrada. */
   function marcas() {
     const m = el('div', { className: 'marcas', ariaHidden: 'true' });
     m.innerHTML =
@@ -666,47 +648,120 @@ html.ver-grilla .guias {
     return el('a', { className: 'enlace', href: `#/${e.id}`, textContent: texto });
   }
 
-  /* ── Lectura de a un terceto ──
-     Pensada desde la frase del libro: alguien escribe en una libreta mientras espera.
-     Cada paso lo da el lector; nada avanza solo ni por scroll. */
-  function pintar() {
-    const ps = contenido.querySelectorAll('.terceto');
-    ps.forEach((p, i) => {
-      const oculto = i >= visibles;
-      p.classList.toggle('oculto', oculto);
-      p.classList.toggle('leido', i < visibles - 1);
-      /* Lo oculto no existe para el lector de pantalla ni para el teclado. */
-      if (oculto) p.setAttribute('aria-hidden', 'true'); else p.removeAttribute('aria-hidden');
-    });
-    const seguir = $('.seguir', contenido);
-    if (seguir) seguir.hidden = corrido || visibles >= ps.length;
-    const m = $('.marcas', contenido);
-    if (m) m.style.setProperty('--giro', visibles);
+  /* ── Imagen del poema ──
+     Cada poema se baja o se comparte como PNG de 1080 × 1350 (4:5, el formato de Instagram), dibujado
+     en un canvas con la misma tipografía de la página: sin librerías y sin enviar nada a ningún servidor.
+     Un poema largo se reparte en varias láminas, de a estrofas completas, para que sirva de carrusel. */
+  const LIENZO = { w: 1080, h: 1350, margen: 108, pie: 170 };
+
+  const envolver = (ctx, linea, ancho) => {
+    if (!linea.trim()) return [''];
+    const salida = []; let actual = '';
+    for (const palabra of linea.split(' ')) {
+      const prueba = actual ? actual + ' ' + palabra : palabra;
+      if (!actual || ctx.measureText(prueba).width <= ancho) actual = prueba;
+      else { salida.push(actual); actual = palabra; }
+    }
+    salida.push(actual);
+    return salida;
+  };
+
+  const cargarImagen = (src) => new Promise((ok, fallo) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fallo; i.src = src; });
+
+  async function crearImagenes(e) {
+    const { w, h, margen, pie } = LIENZO;
+    await Promise.all([document.fonts.load('400 40px "Plus Jakarta Sans"'), document.fonts.load('600 40px "Plus Jakarta Sans"')]);
+    const lienzo = document.createElement('canvas'); lienzo.width = w; lienzo.height = h;
+    const ctx = lienzo.getContext('2d');
+    const ancho = w - 2 * margen;
+    const tipo = (peso, tam) => `${peso} ${tam}px "Plus Jakarta Sans", system-ui, sans-serif`;
+
+    /* El título solo se dibuja si no es el primer verso: así no se repite. */
+    const primerVerso = e.tercetos[0].split('\n')[0].trim().toLowerCase();
+    const conTitulo = e.titulo.trim().toLowerCase() !== primerVerso;
+    const altoTitulo = conTitulo ? 90 : 0; // una línea de título y una de aire
+
+    const maquetar = (tam) => {
+      ctx.font = tipo(400, tam);
+      const lh = Math.round(tam * 1.5);
+      return { lh, bloques: e.tercetos.map((t) => t.split('\n').flatMap((l) => envolver(ctx, l, ancho))) };
+    };
+    const util = h - margen - pie;
+
+    /* 1) Todo en una lámina, con el cuerpo más grande que quepa. */
+    let tam = 58, paginas = null, lh = 0;
+    for (; tam >= 30; tam -= 2) {
+      const m = maquetar(tam);
+      const total = m.bloques.reduce((a, b) => a + b.length * m.lh, 0) + (m.bloques.length - 1) * m.lh;
+      if (total <= util - altoTitulo) { paginas = [m.bloques]; lh = m.lh; break; }
+    }
+    /* 2) Si no cabe, a 36 px y por estrofas completas. */
+    if (!paginas) {
+      tam = 36;
+      const m = maquetar(tam); lh = m.lh; paginas = [];
+      let actual = [], alto = 0, cupo = util - altoTitulo;
+      m.bloques.forEach((b) => {
+        const extra = (actual.length ? m.lh : 0) + b.length * m.lh;
+        if (actual.length && alto + extra > cupo) { paginas.push(actual); actual = []; alto = 0; cupo = util; }
+        alto += (actual.length ? m.lh : 0) + b.length * m.lh;
+        actual.push(b);
+      });
+      if (actual.length) paginas.push(actual);
+    }
+
+    const isotipo = await cargarImagen('brand/Isotipo-b.svg').catch(() => null);
+    const blobs = [];
+    for (let p = 0; p < paginas.length; p++) {
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+      ctx.textBaseline = 'top'; ctx.fillStyle = '#0a0a0a'; ctx.textAlign = 'left';
+      let y = margen;
+      if (p === 0 && conTitulo) { ctx.font = tipo(600, 40); ctx.fillText(e.titulo, margen, y); y += altoTitulo; }
+      ctx.font = tipo(400, tam);
+      paginas[p].forEach((bloque, i) => {
+        if (i) y += lh;
+        bloque.forEach((linea) => { ctx.fillText(linea, margen, y + (lh - tam) / 2); y += lh; });
+      });
+      /* Pie: el sitio a la izquierda; el isotipo de Bastos a la derecha, y el número si hay varias láminas. */
+      ctx.font = tipo(400, 26); ctx.fillStyle = '#6b6b6b'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('cosasquepasan.blog', margen, h - margen);
+      if (isotipo) ctx.drawImage(isotipo, w - margen - 64, h - margen - 64, 64, 64);
+      if (paginas.length > 1) { ctx.textAlign = 'right'; ctx.fillText(`${p + 1} / ${paginas.length}`, w - margen - 90, h - margen); ctx.textAlign = 'left'; }
+      blobs.push(await new Promise((ok) => lienzo.toBlob(ok, 'image/png')));
+    }
+    return blobs;
   }
 
-  function avanzar() {
-    if (!abierta || corrido) return false;
-    if (visibles >= abierta.tercetos.length) return false;
-    visibles += 1;
-    pintar();
-    const nuevo = contenido.querySelectorAll('.terceto')[visibles - 1];
-    nuevo.classList.add('nuevo');
-    /* El botón y el terceto nuevo se mantienen en pantalla, sin saltos bruscos. */
-    const fila = $('.seguir-fila', contenido);
-    if (fila) fila.scrollIntoView({ block: 'nearest', behavior: reducido.matches ? 'auto' : 'smooth' });
-    anuncio.textContent = abierta.tercetos[visibles - 1].replace(/\n/g, ', ');
-    return true;
+  const nombreArchivo = (e, i, n) => `${e.id}${n > 1 ? '-' + (i + 1) : ''}.png`;
+
+  function descargar(blobs, e) {
+    blobs.forEach((b, i) => setTimeout(() => {
+      const a = el('a', { href: URL.createObjectURL(b), download: nombreArchivo(e, i, blobs.length) });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }, i * 350));
   }
-  function retroceder() {
-    if (!abierta || corrido || visibles <= 1) return false;
-    visibles -= 1;
-    pintar();
-    return true;
+
+  let temporizadorAviso;
+  function avisar(texto) {
+    const n = $('#aviso'); n.textContent = texto; n.classList.add('visible');
+    clearTimeout(temporizadorAviso); temporizadorAviso = setTimeout(() => n.classList.remove('visible'), 3400);
   }
-  function alternarCorrido() {
-    corrido = !corrido;
-    guardar('cqp-corrido', corrido ? '1' : '0');
-    ruta(false);
+
+  /* Compartir: en el celular abre la hoja de compartir del sistema, donde está Instagram. Instagram no
+     deja publicar desde una página web, así que en el computador se baja la imagen para subirla desde ahí. */
+  async function accion(boton, e, que) {
+    boton.disabled = true;
+    try {
+      const blobs = await crearImagenes(e);
+      if (que === 'compartir') {
+        const archivos = blobs.map((b, i) => new File([b], nombreArchivo(e, i, blobs.length), { type: 'image/png' }));
+        if (navigator.canShare && navigator.canShare({ files: archivos })) {
+          try { await navigator.share({ files: archivos, title: e.titulo }); }
+          catch (err) { if (err.name !== 'AbortError') { descargar(blobs, e); avisar('Imagen descargada'); } }
+        } else { descargar(blobs, e); avisar(blobs.length > 1 ? 'Imágenes descargadas para Instagram' : 'Imagen descargada para Instagram'); }
+      } else { descargar(blobs, e); avisar(blobs.length > 1 ? `${blobs.length} imágenes descargadas` : 'Imagen descargada'); }
+    } catch (err) { avisar('No se pudo crear la imagen'); }
+    boton.disabled = false;
   }
 
   /* ── Ruta ──
@@ -728,27 +783,17 @@ html.ver-grilla .guias {
   addEventListener('hashchange', () => ruta(true));
 
   /* ── Teclado ──
-     Espacio, → y Enter dan el paso; ← lo deshace; Esc vuelve al índice; [ y ] cambian de entrada. */
+     Esc vuelve al índice; [ y ] cambian de entrada; g muestra la retícula. */
   addEventListener('keydown', (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    if (ev.target.closest && ev.target.closest('a, button') && (ev.key === ' ' || ev.key === 'Enter')) return;
     const k = ev.key;
     if (k === 'g') { root.classList.toggle('ver-grilla'); return; }
     if (!abierta) return;
-    if (k === ' ' || k === 'ArrowRight' || k === 'ArrowDown' || k === 'Enter') { if (avanzar()) ev.preventDefault(); }
-    else if (k === 'ArrowLeft' || k === 'ArrowUp') { if (retroceder()) ev.preventDefault(); }
-    else if (k === 'Escape') { location.hash = '#/'; }
+    if (k === 'Escape') { location.hash = '#/'; }
     else if (k === ']' || k === '[') {
       const i = entradas.indexOf(abierta) + (k === ']' ? 1 : -1);
       if (entradas[i]) location.hash = `#/${entradas[i].id}`;
     }
-  });
-
-  /* En táctil, tocar el texto da el paso (salvo que se esté seleccionando). */
-  contenido.addEventListener('click', (ev) => {
-    if (!ev.target.closest('.cuerpo')) return;
-    if (String(getSelection()).length) return;
-    avanzar();
   });
 
   /* ── Imán del puntero ──
