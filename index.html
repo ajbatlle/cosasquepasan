@@ -632,7 +632,7 @@ html.ver-grilla .guias {
     const opciones = el('div', { className: 'opciones', hidden: true, role: 'group', ariaLabel: 'Compartir este poema' },
       opcion('Copiar enlace', () => copiarEnlace(e)),
       opcion('WhatsApp', () => whatsapp(e)),
-      opcion('Instagram', (b) => accion(b, e, 'compartir')),
+      opcion('Historia de Instagram', (b) => accion(b, e, 'historia')),
       opcion('Descargar PNG', (b) => accion(b, e, 'bajar')));
     if (tactil() && navigator.share) opciones.append(opcion('Más…', () => navigator.share({ title: e.titulo, url: enlaceDe(e) }).catch(() => {})));
     function alternarOpciones(abrir) {
@@ -688,12 +688,19 @@ html.ver-grilla .guias {
 
   const cargarImagen = (src) => new Promise((ok, fallo) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fallo; i.src = src; });
 
-  async function crearImagenes(e) {
-    const { w, h, margen, pie } = LIENZO;
+  async function crearImagenes(e, formato = 'post') {
+    /* Dos formatos: «post» (1080 × 1350, 4:5) y «historia» (1080 × 1920, 9:16). La historia lleva el
+       poema en una tarjeta blanca sobre azul de marca, con aire arriba y abajo: Instagram tapa ~250 px en
+       cada borde con su interfaz, y abajo queda el sitio donde va el sticker del enlace. */
+    const historia = formato === 'historia';
+    const w = 1080, h = historia ? 1920 : 1350;
+    const caja = historia ? { x: 72, y: 250, w: 936, h: 1300 } : { x: 0, y: 0, w: 1080, h: 1350 };
+    const pad = historia ? 72 : 108;
+    const izq = caja.x + pad, ancho = caja.w - 2 * pad;
+    const base = caja.y + caja.h - pad; // línea base del pie
     await Promise.all([document.fonts.load('400 40px "Plus Jakarta Sans"'), document.fonts.load('600 40px "Plus Jakarta Sans"')]);
     const lienzo = document.createElement('canvas'); lienzo.width = w; lienzo.height = h;
     const ctx = lienzo.getContext('2d');
-    const ancho = w - 2 * margen;
     const tipo = (peso, tam) => `${peso} ${tam}px "Plus Jakarta Sans", system-ui, sans-serif`;
 
     /* El título solo se dibuja si no es el primer verso: así no se repite. */
@@ -706,7 +713,7 @@ html.ver-grilla .guias {
       const lh = Math.round(tam * 1.5);
       return { lh, bloques: e.tercetos.map((t) => t.split('\n').flatMap((l) => envolver(ctx, l, ancho))) };
     };
-    const util = h - margen - pie;
+    const util = caja.h - pad - (pad + 62);
 
     /* 1) Todo en una lámina, con el cuerpo más grande que quepa. */
     let tam = 58, paginas = null, lh = 0;
@@ -732,30 +739,31 @@ html.ver-grilla .guias {
     const isotipo = await cargarImagen('brand/Isotipo-b.svg').catch(() => null);
     const blobs = [];
     for (let p = 0; p < paginas.length; p++) {
-      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = historia ? '#003ec0' : '#fff'; ctx.fillRect(0, 0, w, h);
+      if (historia) { ctx.fillStyle = '#fff'; ctx.fillRect(caja.x, caja.y, caja.w, caja.h); }
       ctx.textBaseline = 'top'; ctx.fillStyle = '#0a0a0a'; ctx.textAlign = 'left';
-      let y = margen;
-      if (p === 0 && conTitulo) { ctx.font = tipo(600, 40); ctx.fillText(e.titulo, margen, y); y += altoTitulo; }
+      let y = caja.y + pad;
+      if (p === 0 && conTitulo) { ctx.font = tipo(600, 40); ctx.fillText(e.titulo, izq, y); y += altoTitulo; }
       ctx.font = tipo(400, tam);
       paginas[p].forEach((bloque, i) => {
         if (i) y += lh;
-        bloque.forEach((linea) => { ctx.fillText(linea, margen, y + (lh - tam) / 2); y += lh; });
+        bloque.forEach((linea) => { ctx.fillText(linea, izq, y + (lh - tam) / 2); y += lh; });
       });
       /* Pie: el sitio a la izquierda; el isotipo de Bastos a la derecha, y el número si hay varias láminas. */
       ctx.font = tipo(400, 26); ctx.fillStyle = '#6b6b6b'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText('cosasquepasan.blog', margen, h - margen);
-      if (isotipo) ctx.drawImage(isotipo, w - margen - 64, h - margen - 64, 64, 64);
-      if (paginas.length > 1) { ctx.textAlign = 'right'; ctx.fillText(`${p + 1} / ${paginas.length}`, w - margen - 90, h - margen); ctx.textAlign = 'left'; }
+      ctx.fillText('cosasquepasan.blog', izq, base);
+      if (isotipo) ctx.drawImage(isotipo, caja.x + caja.w - pad - 64, base - 64, 64, 64);
+      if (paginas.length > 1) { ctx.textAlign = 'right'; ctx.fillText(`${p + 1} / ${paginas.length}`, caja.x + caja.w - pad - 90, base); ctx.textAlign = 'left'; }
       blobs.push(await new Promise((ok) => lienzo.toBlob(ok, 'image/png')));
     }
     return blobs;
   }
 
-  const nombreArchivo = (e, i, n) => `${e.id}${n > 1 ? '-' + (i + 1) : ''}.png`;
+  const nombreArchivo = (e, i, n, formato = 'post') => `${e.id}${formato === 'historia' ? '-historia' : ''}${n > 1 ? '-' + (i + 1) : ''}.png`;
 
-  function descargar(blobs, e) {
+  function descargar(blobs, e, formato) {
     blobs.forEach((b, i) => setTimeout(() => {
-      const a = el('a', { href: URL.createObjectURL(b), download: nombreArchivo(e, i, blobs.length) });
+      const a = el('a', { href: URL.createObjectURL(b), download: nombreArchivo(e, i, blobs.length, formato) });
       document.body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }, i * 350));
@@ -774,7 +782,7 @@ html.ver-grilla .guias {
   /* El enlace de un poema lleva su ruta en el hash: al abrirlo cae directo en él. */
   const enlaceDe = (e) => `${location.origin}${location.pathname}#/${e.id}`;
 
-  async function copiarEnlace(e) {
+  async function copiarSilencio(e) {
     const url = enlaceDe(e);
     try { await navigator.clipboard.writeText(url); }
     catch (_) {
@@ -782,26 +790,31 @@ html.ver-grilla .guias {
       const t = el('textarea', { value: url }); t.style.cssText = 'position:fixed;opacity:0'; document.body.append(t); t.select();
       try { document.execCommand('copy'); } catch (__) {} t.remove();
     }
-    avisar('Enlace copiado');
   }
+
+  async function copiarEnlace(e) { await copiarSilencio(e); avisar('Enlace copiado'); }
 
   function whatsapp(e) {
     window.open(`https://wa.me/?text=${encodeURIComponent(`${e.titulo} ${enlaceDe(e)}`)}`, '_blank', 'noopener');
   }
 
-  /* Compartir: en el celular abre la hoja de compartir del sistema, donde está Instagram. Instagram no
-     deja publicar desde una página web, así que en el computador se baja la imagen para subirla desde ahí. */
+  /* Imagen y enlace, como al compartir de Spotify a una historia: Instagram no deja pegar el sticker del enlace
+     desde una página web, así que el enlace del poema se copia a la vez y el sticker «Enlace» de la historia lo
+     ofrece al pegarlo. En el celular se abre la hoja de compartir del sistema, donde está Instagram. */
   async function accion(boton, e, que) {
     boton.disabled = true;
+    const historia = que === 'historia';
     try {
-      const blobs = await crearImagenes(e);
-      if (que === 'compartir') {
-        const archivos = blobs.map((b, i) => new File([b], nombreArchivo(e, i, blobs.length), { type: 'image/png' }));
+      if (historia) await copiarSilencio(e); // primero, mientras el toque del usuario sigue vigente
+      const blobs = await crearImagenes(e, historia ? 'historia' : 'post');
+      const varias = blobs.length > 1;
+      if (historia) {
+        const archivos = blobs.map((b, i) => new File([b], nombreArchivo(e, i, blobs.length, 'historia'), { type: 'image/png' }));
         if (tactil() && navigator.canShare && navigator.canShare({ files: archivos })) {
-          try { await navigator.share({ files: archivos, title: e.titulo }); }
-          catch (err) { if (err.name !== 'AbortError') { descargar(blobs, e); avisar('Imagen descargada'); } }
-        } else { descargar(blobs, e); avisar(blobs.length > 1 ? 'Imágenes descargadas para Instagram' : 'Imagen descargada para Instagram'); }
-      } else { descargar(blobs, e); avisar(blobs.length > 1 ? `${blobs.length} imágenes descargadas` : 'Imagen descargada'); }
+          try { await navigator.share({ files: archivos, title: e.titulo }); avisar('Enlace copiado para el sticker'); }
+          catch (err) { if (err.name !== 'AbortError') { descargar(blobs, e, 'historia'); avisar('Imagen descargada y enlace copiado'); } }
+        } else { descargar(blobs, e, 'historia'); avisar(varias ? 'Imágenes descargadas y enlace copiado' : 'Imagen descargada y enlace copiado'); }
+      } else { descargar(blobs, e, 'post'); avisar(varias ? `${blobs.length} imágenes descargadas` : 'Imagen descargada'); }
     } catch (err) { avisar('No se pudo crear la imagen'); }
     boton.disabled = false;
   }
