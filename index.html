@@ -615,7 +615,53 @@ html.ver-grilla .guias {
 
   /* El índice solo muestra lo que ya tiene texto final: las entradas vacías o provisorias quedan
      guardadas arriba, sin publicarse, hasta que haya texto. */
-  const entradas = todas.filter((e) => e.tercetos.length > 0 && !e.provisorio);
+  /* El orden de lectura. Va por calidad (lo más fuerte primero) y con un hilo entre bloques:
+     voz, duelo y noche → la casa y la hija → escribir como desvío → las cuecas → lo más abstracto → cierre.
+     Para mover un poema, se cambia de lugar su id en esta lista; los textos no se tocan. */
+  const orden = [
+    'incluso-despues-de-morir-seguir-rezando',
+    'ha-muerto-ayer-un-familiar-cercano',
+    'ventanas-que-no-cierran',
+    'mientras-la-pizza-esta-en-el-horno',
+    'prohibida-la-escritura',
+    'se-encuentra-con-una-imagen-que-lo-desborda',
+    'disfemia',
+    'cuando-camino-afirmando-las-manos-de-mi-hija',
+    'una-nina-en-la-plaza',
+    'sabado-vina-del-mar',
+    'mientras-vuelan-las-moscas-pienso-en-dioses',
+    'ducha-prendida',
+    'antes-de-acostarme',
+    'en-el-chat-de-mamas',
+    'alguien-que-regresa-de-un-viaje-largo',
+    'paloma-gorda',
+    'primavera',
+    'me-quedan-cinco-minutos',
+    'negocios',
+    'loza-x-lavar',
+    'podria-escribir-sobre-la-lluvia',
+    'aunque-quieres-contar',
+    'me-preguntan-como-esta-la-poesia',
+    'cosas-que-pasan',
+    'yo-quise-meter-los-goles',
+    'hay-quienes-tienen-talento',
+    'cueca-del-poeta-cuentero',
+    'cueca-del-poeta-rimador',
+    'cueca-del-poeta-cansado',
+    'cueca-del-angurri',
+    'das-vueltas-y-vueltas',
+    'papas-duquesas',
+    'vino-en-la-copa',
+    'problemas-domesticos',
+    'enjambre-de-dudas',
+    'los-pronosticos-pueden-variar',
+    'somos-el-alma-de-los-robots',
+    'llegas-a-zonas-desoladas',
+    'cuando-las-raices-alcanzan-el-inframundo',
+    'al-centro-de-la-mesa-en-un-canasto',
+  ];
+  const lugar = (e) => { const i = orden.indexOf(e.id); return i < 0 ? orden.length : i; };
+  const entradas = todas.filter((e) => e.tercetos.length > 0 && !e.provisorio).sort((a, b) => lugar(a) - lugar(b));
 
   /* Las fotos de la portada, una por elemento, en este orden: rombos, cruz, círculos, flor.
      Cada una es { src: 'fotos/archivo.jpg', alt: 'qué se ve' }. Con `null` el elemento queda azul. */
