@@ -24,6 +24,15 @@
    ────────────────────────────────────────────────────────────────────────── */
 
 @font-face {
+  /* Solo para las imágenes que se comparten (canvas): el diseño de los posts de Instagram. */
+  font-family: 'EB Garamond';
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('fuentes/EBGaramond-Variable.woff2') format('woff2-variations'),
+       url('fuentes/EBGaramond-Variable.woff2') format('woff2');
+}
+
+@font-face {
   font-family: 'Plus Jakarta Sans';
   font-weight: 200 800;
   font-display: swap;
@@ -804,10 +813,14 @@ html.ver-grilla .guias {
   }
 
   /* ── Imagen del poema ──
-     Cada poema se baja o se comparte como PNG de 1080 × 1350 (4:5, el formato de Instagram), dibujado
-     en un canvas con la misma tipografía de la página: sin librerías y sin enviar nada a ningún servidor.
-     Un poema largo se reparte en varias láminas, de a estrofas completas, para que sirva de carrusel. */
-  const LIENZO = { w: 1080, h: 1350, margen: 108, pie: 170 };
+     Cada poema se baja o se comparte como PNG con el diseño de los posts de Instagram de Bastos (el de
+     «Sábado, Viña del Mar»): EB Garamond a 35 px con interlínea 1,38, azul #003EC0 sobre papel #F2F3F9, el
+     poema centrado en la lámina y alineado a la izquierda, y el título en negrita pegado al primer verso.
+     Sin pie, sin logo y sin numeración. Dos formatos: «post» (1080 × 1350, 4:5) e «historia» (1080 × 1920, 9:16).
+     Se dibuja en un canvas: sin librerías y sin enviar nada a ningún servidor. Un poema largo se reparte en
+     varias láminas, de a estrofas completas, para que sirva de carrusel. */
+  const PAPEL = '#F2F3F9', TINTA = '#003EC0';
+  const TAM = 35, LH = TAM * 1.38; // la interlínea también es el espacio entre estrofas
 
   const envolver = (ctx, linea, ancho) => {
     if (!linea.trim()) return [''];
@@ -821,74 +834,59 @@ html.ver-grilla .guias {
     return salida;
   };
 
-  const cargarImagen = (src) => new Promise((ok, fallo) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fallo; i.src = src; });
-
   async function crearImagenes(e, formato = 'post') {
-    /* Dos formatos: «post» (1080 × 1350, 4:5) y «historia» (1080 × 1920, 9:16). La historia lleva el
-       poema en una tarjeta blanca sobre azul de marca, con aire arriba y abajo: Instagram tapa ~250 px en
-       cada borde con su interfaz, y abajo queda el sitio donde va el sticker del enlace. */
     const historia = formato === 'historia';
     const w = 1080, h = historia ? 1920 : 1350;
-    const caja = historia ? { x: 72, y: 250, w: 936, h: 1300 } : { x: 0, y: 0, w: 1080, h: 1350 };
-    const pad = historia ? 72 : 108;
-    const izq = caja.x + pad, ancho = caja.w - 2 * pad;
-    const base = caja.y + caja.h - pad; // línea base del pie
-    await Promise.all([document.fonts.load('400 40px "Plus Jakarta Sans"'), document.fonts.load('600 40px "Plus Jakarta Sans"')]);
+    const maxAncho = 840;                  // márgenes de 120 px a cada lado
+    const maxAlto = historia ? 1100 : 1030; // en la historia, Instagram tapa ~250 px arriba y abajo
+    const tipo = (peso) => `${peso} ${TAM}px "EB Garamond", Georgia, serif`;
+    await Promise.all([document.fonts.load(tipo(400)), document.fonts.load(tipo(700))]);
     const lienzo = document.createElement('canvas'); lienzo.width = w; lienzo.height = h;
     const ctx = lienzo.getContext('2d');
-    const tipo = (peso, tam) => `${peso} ${tam}px "Plus Jakarta Sans", system-ui, sans-serif`;
 
-    /* El título solo se dibuja si no es el primer verso: así no se repite. */
-    const primerVerso = e.tercetos[0].split('\n')[0].trim().toLowerCase();
-    const conTitulo = e.titulo.trim().toLowerCase() !== primerVerso;
-    const altoTitulo = conTitulo ? 90 : 0; // una línea de título y una de aire
+    /* El título va en negrita, pegado al primer verso, y solo si no es ese mismo verso: así no se repite. */
+    const limpio = (x) => x.trim().toLowerCase().replace(/[.,;:!?¡¿]+$/, '');
+    const conTitulo = limpio(e.titulo) !== limpio(e.tercetos[0].split('\n')[0]);
 
-    const maquetar = (tam) => {
-      ctx.font = tipo(400, tam);
-      const lh = Math.round(tam * 1.5);
-      return { lh, bloques: e.tercetos.map((t) => t.split('\n').flatMap((l) => envolver(ctx, l, ancho))) };
-    };
-    const util = caja.h - pad - (pad + 62);
+    /* Cada estrofa es una lista de líneas { t: texto, b: negrita }, con los versos largos ya partidos. */
+    ctx.font = tipo(400);
+    const bloques = e.tercetos.map((t) => t.split('\n').flatMap((l) => envolver(ctx, l, maxAncho)).map((x) => ({ t: x, b: false })));
+    if (conTitulo) bloques[0].unshift({ t: e.titulo, b: true });
 
-    /* 1) Todo en una lámina, con el cuerpo más grande que quepa. */
-    let tam = 58, paginas = null, lh = 0;
-    for (; tam >= 30; tam -= 2) {
-      const m = maquetar(tam);
-      const total = m.bloques.reduce((a, b) => a + b.length * m.lh, 0) + (m.bloques.length - 1) * m.lh;
-      if (total <= util - altoTitulo) { paginas = [m.bloques]; lh = m.lh; break; }
-    }
-    /* 2) Si no cabe, a 36 px y por estrofas completas. */
-    if (!paginas) {
-      tam = 36;
-      const m = maquetar(tam); lh = m.lh; paginas = [];
-      let actual = [], alto = 0, cupo = util - altoTitulo;
-      m.bloques.forEach((b) => {
-        const extra = (actual.length ? m.lh : 0) + b.length * m.lh;
-        if (actual.length && alto + extra > cupo) { paginas.push(actual); actual = []; alto = 0; cupo = util; }
-        alto += (actual.length ? m.lh : 0) + b.length * m.lh;
-        actual.push(b);
+    /* Se reparten en láminas por estrofas completas; una estrofa más alta que la lámina se parte por líneas. */
+    const maxLineas = Math.floor(maxAlto / LH);
+    const alto = (n, estrofas) => (n + estrofas - 1) * LH; // n líneas y `estrofas` bloques
+    const paginas = [];
+    let actual = [], lineas = 0;
+    const cerrar = () => { if (actual.length) paginas.push(actual); actual = []; lineas = 0; };
+    bloques.forEach((b) => {
+      const partes = [];
+      for (let i = 0; i < b.length; i += maxLineas) partes.push(b.slice(i, i + maxLineas));
+      partes.forEach((p) => {
+        if (actual.length && alto(lineas + p.length, actual.length + 1) > maxAlto) cerrar();
+        actual.push(p); lineas += p.length;
       });
-      if (actual.length) paginas.push(actual);
-    }
+    });
+    cerrar();
 
-    const isotipo = await cargarImagen('brand/Isotipo-b.svg').catch(() => null);
     const blobs = [];
-    for (let p = 0; p < paginas.length; p++) {
-      ctx.fillStyle = historia ? '#003ec0' : '#fff'; ctx.fillRect(0, 0, w, h);
-      if (historia) { ctx.fillStyle = '#fff'; ctx.fillRect(caja.x, caja.y, caja.w, caja.h); }
-      ctx.textBaseline = 'top'; ctx.fillStyle = '#0a0a0a'; ctx.textAlign = 'left';
-      let y = caja.y + pad;
-      if (p === 0 && conTitulo) { ctx.font = tipo(600, 40); ctx.fillText(e.titulo, izq, y); y += altoTitulo; }
-      ctx.font = tipo(400, tam);
-      paginas[p].forEach((bloque, i) => {
-        if (i) y += lh;
-        bloque.forEach((linea) => { ctx.fillText(linea, izq, y + (lh - tam) / 2); y += lh; });
+    for (const pagina of paginas) {
+      ctx.fillStyle = PAPEL; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = TINTA; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      const todas = pagina.flat();
+      const ancho = Math.max(...todas.map((l) => { ctx.font = tipo(l.b ? 700 : 400); return ctx.measureText(l.t).width; }));
+      const x = Math.round((w - ancho) / 2);
+      let y = Math.round((h - alto(todas.length, pagina.length)) / 2);
+      pagina.forEach((bloque, i) => {
+        if (i) y += LH;
+        bloque.forEach((l) => {
+          ctx.font = tipo(l.b ? 700 : 400);
+          const m = ctx.measureText(l.t);
+          const a = m.fontBoundingBoxAscent, d = m.fontBoundingBoxDescent;
+          ctx.fillText(l.t, x, y + (LH - (a + d)) / 2 + a);
+          y += LH;
+        });
       });
-      /* Pie: el sitio a la izquierda; el isotipo de Bastos a la derecha, y el número si hay varias láminas. */
-      ctx.font = tipo(400, 26); ctx.fillStyle = '#6b6b6b'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText('cosasquepasan.blog', izq, base);
-      if (isotipo) ctx.drawImage(isotipo, caja.x + caja.w - pad - 64, base - 64, 64, 64);
-      if (paginas.length > 1) { ctx.textAlign = 'right'; ctx.fillText(`${p + 1} / ${paginas.length}`, caja.x + caja.w - pad - 90, base); ctx.textAlign = 'left'; }
       blobs.push(await new Promise((ok) => lienzo.toBlob(ok, 'image/png')));
     }
     return blobs;
