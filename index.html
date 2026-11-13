@@ -281,9 +281,18 @@ main { flex: 1; padding-top: calc(4 * var(--u)); }
 .pie .fecha { grid-column: 1 / span 6; min-height: var(--u); }
 .pie .hora  { grid-column: 7 / span 6; text-align: right; min-height: var(--u); }
 .pie [data-reloj-hora] { font-variant-numeric: tabular-nums; }
+
+/* Reconocimiento del financiamiento (convenio, cláusula novena): logo del Ministerio abajo a la
+   izquierda, mínimo 150 px en digital, y la leyenda del Fondo. Rótulo en las columnas 1–4, texto desde la 5. */
+.pie .sello { grid-column: 1 / span 4; grid-row: 1; margin-bottom: calc(2 * var(--u)); line-height: 0; }
+.pie .sello img { display: block; width: 150px; height: auto; }
+.pie .credito { grid-column: 5 / span 6; grid-row: 1; margin-bottom: calc(2 * var(--u)); }
+
 @media (max-width: 720px) {
   .pie .fecha { grid-column: 1 / span 12; }
   .pie .hora  { grid-column: 1 / span 12; text-align: left; }
+  .pie .sello, .pie .credito { grid-column: 1 / span 12; grid-row: auto; }
+  .pie .sello { margin-bottom: var(--u); }
 }
 
 /* ── Guías de la retícula, solo en pantalla ── */
@@ -345,6 +354,9 @@ html.ver-grilla .guias {
   </main>
 
   <footer class="malla pie">
+    <!-- Convenio de la beca, cláusula novena: logo del Ministerio (≥ 150 px) y leyenda del Fondo, durante toda la vida del proyecto. -->
+    <div class="sello"><img src="brand/mincap-logo.png" alt="Ministerio de las Culturas, las Artes y el Patrimonio. Gobierno de Chile" width="313" height="284"></div>
+    <p class="menor credito">Proyecto financiado por el Fondo Nacional de Fomento del Libro y la Lectura, Convocatoria 2026, del Ministerio de las Culturas, las Artes y el Patrimonio.</p>
     <!-- Vacíos a propósito: un valor calculado al cargar sería falso mañana. Se rellenan en el navegador. -->
     <p class="menor fecha" data-reloj-fecha></p>
     <p class="menor hora"><span data-reloj-hora></span> santiago de chile</p>
