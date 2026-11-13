@@ -33,6 +33,15 @@
 }
 
 @font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('fuentes/EBGaramond-Italic-Variable.woff2') format('woff2-variations'),
+       url('fuentes/EBGaramond-Italic-Variable.woff2') format('woff2');
+}
+
+@font-face {
   font-family: 'Plus Jakarta Sans';
   font-weight: 200 800;
   font-display: swap;
@@ -722,6 +731,14 @@ html.ver-grilla .guias {
   /* Entrada abierta en este momento. */
   let abierta = null;
 
+  /* «like» y «likes» van siempre en cursiva. split con paréntesis de captura devuelve [texto, like, texto, …]:
+     las posiciones impares son la palabra. */
+  const LIKE = /(?<![\p{L}])(likes?)(?![\p{L}])/giu;
+  const cursivas = (t) => t.split(LIKE).map((x, i) => {
+    if (i % 2 === 0) return x;
+    const n = document.createElement('em'); n.textContent = x; return n;
+  });
+
   const el = (tag, props = {}, ...hijos) => {
     const n = Object.assign(document.createElement(tag), props);
     hijos.forEach((h) => n.append(h));
@@ -787,7 +804,7 @@ html.ver-grilla .guias {
 
     /* El poema entero, de una vez. */
     const cuerpo = el('article', { className: 'cuerpo', ariaLabel: e.titulo });
-    e.tercetos.forEach((t) => cuerpo.append(el('p', { className: 'terceto', textContent: t })));
+    e.tercetos.forEach((t) => cuerpo.append(el('p', { className: 'terceto' }, ...cursivas(t))));
 
     /* Compartir, como en Spotify: un botón que abre las opciones. */
     const compartir = el('button', { className: 'pildora', type: 'button', textContent: 'Compartir', onclick: () => alternarOpciones() });
@@ -843,12 +860,12 @@ html.ver-grilla .guias {
   const PAPEL = '#F2F3F9', TINTA = '#003EC0';
   const TAM = 35, LH = TAM * 1.38; // la interlínea también es el espacio entre estrofas
 
-  const envolver = (ctx, linea, ancho) => {
+  const envolver = (medir, linea, ancho) => {
     if (!linea.trim()) return [''];
     const salida = []; let actual = '';
     for (const palabra of linea.split(' ')) {
       const prueba = actual ? actual + ' ' + palabra : palabra;
-      if (!actual || ctx.measureText(prueba).width <= ancho) actual = prueba;
+      if (!actual || medir(prueba) <= ancho) actual = prueba;
       else { salida.push(actual); actual = palabra; }
     }
     salida.push(actual);
@@ -860,8 +877,8 @@ html.ver-grilla .guias {
     const w = 1080, h = historia ? 1920 : 1350;
     const maxAncho = 840;                  // márgenes de 120 px a cada lado
     const maxAlto = historia ? 1100 : 1030; // en la historia, Instagram tapa ~250 px arriba y abajo
-    const tipo = (peso) => `${peso} ${TAM}px "EB Garamond", Georgia, serif`;
-    await Promise.all([document.fonts.load(tipo(400)), document.fonts.load(tipo(700))]);
+    const tipo = (peso, cursiva = false) => `${cursiva ? 'italic ' : ''}${peso} ${TAM}px "EB Garamond", Georgia, serif`;
+    await Promise.all([document.fonts.load(tipo(400)), document.fonts.load(tipo(700)), document.fonts.load(tipo(400, true))]);
     const lienzo = document.createElement('canvas'); lienzo.width = w; lienzo.height = h;
     const ctx = lienzo.getContext('2d');
 
@@ -869,9 +886,13 @@ html.ver-grilla .guias {
     const limpio = (x) => x.trim().toLowerCase().replace(/[.,;:!?¡¿]+$/, '');
     const conTitulo = limpio(e.titulo) !== limpio(e.tercetos[0].split('\n')[0]);
 
+    /* Una línea se dibuja en corridas: cada «like» va en cursiva y el resto en redonda. */
+    const corridas = (t) => t.split(LIKE).map((x, i) => ({ t: x, i: i % 2 === 1 })).filter((c) => c.t);
+    const medir = (t) => corridas(t).reduce((a, c) => { ctx.font = tipo(400, c.i); return a + ctx.measureText(c.t).width; }, 0);
+    const medirLinea = (l) => { if (!l.b) return medir(l.t); ctx.font = tipo(700); return ctx.measureText(l.t).width; };
+
     /* Cada estrofa es una lista de líneas { t: texto, b: negrita }, con los versos largos ya partidos. */
-    ctx.font = tipo(400);
-    const bloques = e.tercetos.map((t) => t.split('\n').flatMap((l) => envolver(ctx, l, maxAncho)).map((x) => ({ t: x, b: false })));
+    const bloques = e.tercetos.map((t) => t.split('\n').flatMap((l) => envolver(medir, l, maxAncho)).map((x) => ({ t: x, b: false })));
     if (conTitulo) bloques[0].unshift({ t: e.titulo, b: true });
 
     /* Se reparten en láminas por estrofas completas; una estrofa más alta que la lámina se parte por líneas. */
@@ -895,7 +916,7 @@ html.ver-grilla .guias {
       ctx.fillStyle = PAPEL; ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = TINTA; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       const todas = pagina.flat();
-      const ancho = Math.max(...todas.map((l) => { ctx.font = tipo(l.b ? 700 : 400); return ctx.measureText(l.t).width; }));
+      const ancho = Math.max(...todas.map(medirLinea));
       const x = Math.round((w - ancho) / 2);
       let y = Math.round((h - alto(todas.length, pagina.length)) / 2);
       pagina.forEach((bloque, i) => {
@@ -903,8 +924,9 @@ html.ver-grilla .guias {
         bloque.forEach((l) => {
           ctx.font = tipo(l.b ? 700 : 400);
           const m = ctx.measureText(l.t);
-          const a = m.fontBoundingBoxAscent, d = m.fontBoundingBoxDescent;
-          ctx.fillText(l.t, x, y + (LH - (a + d)) / 2 + a);
+          const base = y + (LH - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent)) / 2 + m.fontBoundingBoxAscent;
+          if (l.b) ctx.fillText(l.t, x, base);
+          else { let cx = x; corridas(l.t).forEach((c) => { ctx.font = tipo(400, c.i); ctx.fillText(c.t, cx, base); cx += ctx.measureText(c.t).width; }); }
           y += LH;
         });
       });
